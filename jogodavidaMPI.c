@@ -20,12 +20,19 @@ void desalocarMatriz(float **matriz);
 void vizinhos(viz_t *viz, float** grid, int x, int y);
 void printSubgrid(float **grid);
 
-int main(){
+int main(int argc, char *argv[]){
 
     struct timeval start_time, end_time;
     double elapsed_time;
 
+    int processId, noProcesses;
+
     int celulas_vivas = 0;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &noProcesses);//numero de processos
+    MPI_Comm_rank(MPI_COMM_WORLD, &processId);//rank do processo
+
     float **grid, **new_grid;
     alocarMatriz(&grid);
     alocarMatriz(&new_grid);
