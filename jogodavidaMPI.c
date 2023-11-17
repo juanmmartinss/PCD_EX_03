@@ -118,6 +118,8 @@ int main(int argc, char *argv[]){
     desalocarMatriz(grid);
     desalocarMatriz(new_grid);
 
+    MPI_Finalize();
+
     return 0;
 }
 
