@@ -4,6 +4,7 @@
 #include <mpi.h>
 //#include <pthread.h>
 
+
 #define N 2048
 #define MAX_ITER 2000
 #define ANSI_YELLOW "\x1b[33m"
