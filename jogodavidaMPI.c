@@ -91,7 +91,9 @@ int main(int argc, char **argv) {
 
         MPI_Barrier(MPI_COMM_WORLD);
 
-        if (rank == 0) printf("Generation %d: %d\n", iter, celulas_vivas);
+        int total_celulas_vivas = 0;
+        MPI_Reduce(&celulas_vivas, &total_celulas_vivas, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        if (rank == 0) printf("Geração %d: %d\n", iter, total_celulas_vivas);
     }
 
     gettimeofday(&end_time, NULL);
