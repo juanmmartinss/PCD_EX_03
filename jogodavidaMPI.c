@@ -66,7 +66,13 @@ int main(int argc, char *argv[]){
     for (int i = 1; i <= MAX_ITER; i++){
         celulas_vivas = 0;
 
-        for (int j = 0; j < N; j++){
+        int step = N / noProcesses;
+        MPI_Scatter(grid, step, MPI_FLOAT, grid, step, MPI_FLOAT, 0, MPI_COMM_WORLD);
+
+        int start = processId * step;
+        int end = start + step;
+
+        for (int j = start; j < end; j++){
             for (int k = 0; k < N; k++){
                 viz_t viz;
                 viz.media = 0.0;
@@ -90,12 +96,15 @@ int main(int argc, char *argv[]){
             }
         }
 
-        float **aux = grid;
-        grid = new_grid;
-        new_grid = aux;
-        printf("Geracao %d: %d\n", i, celulas_vivas);
-        printSubgrid(grid);
-        system("cls");
+        MPI_Gather(grid, step, MPI_FLOAT, new_grid, step, MPI_FLOAT, 0, MPI_COMM_WORLD)
+        if(rank == 0){
+            // float **aux = grid;
+            // grid = new_grid;
+            // new_grid = aux;
+            printf("Geracao %d: %d\n", i, celulas_vivas);
+            printSubgrid(grid);
+            system("cls");
+        }
     }
 
     gettimeofday(&end_time, NULL);
