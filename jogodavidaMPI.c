@@ -2,119 +2,107 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <mpi.h>
-//#include <pthread.h>
-
 
 #define N 2048
 #define MAX_ITER 2000
-#define ANSI_YELLOW "\x1b[33m"
-#define ANSI_GREEN "\x1b[32m"
-#define ANSI_WHITE "\x1b[37m"
 
-typedef struct viz_t{
+// struct para os valores dos vizinhos de uma célula
+typedef struct viz_t {
     float media;
     int vivos;
-}viz_t;
+} viz_t;
 
 void alocarMatriz(float ***matriz);
 void desalocarMatriz(float **matriz);
-void vizinhos(viz_t *viz, float** grid, int x, int y);
+void vizinhos(viz_t *viz, float **grid, int x, int y);
 void printSubgrid(float **grid);
+void comunicaVizinhos(float **grid, int rank, int size);
 
-int main(int argc, char *argv[]){
+int main(int argc, char **argv) {
+    MPI_Init(&argc, &argv);
+
+    int rank, size;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
 
     struct timeval start_time, end_time;
     double elapsed_time;
 
-    int processId, noProcesses;
-
+    int local_N = N / size;
     int celulas_vivas = 0;
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &noProcesses);//numero de processos
-    MPI_Comm_rank(MPI_COMM_WORLD, &processId);//rank do processo
 
     float **grid, **new_grid;
     alocarMatriz(&grid);
     alocarMatriz(&new_grid);
 
-    int lin = 1, col = 1;
-    grid[lin][col+1] = 1.0;
-    grid[lin+1][col+2] = 1.0;
-    grid[lin+2][col] = 1.0;
-    grid[lin+2][col+1] = 1.0;
-    grid[lin+2][col+2] = 1.0;
-    lin = 10, col = 30;
-    grid[lin][col+1] = 1.0;
-    grid[lin][col+2] = 1.0;
-    grid[lin+1][col] = 1.0;
-    grid[lin+1][col+1] = 1.0;
-    grid[lin+2][col+1] = 1.0;
+    // Inicializar grid
+    for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
+        for (int j = 0; j < N; j++) {
+            int offset = rank * local_N;
 
-    gettimeofday(&start_time, NULL);
+            int lin1 = offset + 1, col1 = 1;
+            if (i == lin1 && j >= col1 && j < col1 + 5) grid[i][j] = 1.0;
 
-    for (int i = 0; i < N; i++){
-        for (int j = 0; j < N; j++){
-            if (grid[i][j] != 0.0){
-                celulas_vivas++;
-            }
+            int lin2 = offset + 10, col2 = 30;
+            if (i >= lin2 && i < lin2 + 3 && j >= col2 && j < col2 + 3) grid[i][j] = 1.0;
         }
     }
 
-    printf("Condicao Inicial: %d\n", celulas_vivas);
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    for (int i = 1; i <= MAX_ITER; i++){
+    gettimeofday(&start_time, NULL);
+
+    for (int iter = 1; iter <= MAX_ITER; iter++) {
         celulas_vivas = 0;
 
-        int step = N / noProcesses;
-        MPI_Scatter(grid, step, MPI_FLOAT, grid, step, MPI_FLOAT, 0, MPI_COMM_WORLD);
+        // Comunicar bordas com os vizinhos
+        comunicaVizinhos(grid, rank, size);
 
-        int start = processId * step;
-        int end = start + step;
-
-        for (int j = start; j < end; j++){
-            for (int k = 0; k < N; k++){
+        for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
+            for (int j = 0; j < N; j++) {
                 viz_t viz;
                 viz.media = 0.0;
                 viz.vivos = 0;
-                vizinhos(&viz, grid, j, k);
+                vizinhos(&viz, grid, i, j);
 
-                if (grid[j][k] != 0.0){ // celula atual viva
-                    if (viz.vivos < 2 || viz.vivos > 3) new_grid[j][k] = 0.0;
-                    else{
-                        new_grid[j][k] = 1.0;
+                if (grid[i][j] != 0.0) { // cell is alive
+                    if (viz.vivos < 2 || viz.vivos > 3)
+                        new_grid[i][j] = 0.0;
+                    else {
+                        new_grid[i][j] = 1.0;
                         celulas_vivas++;
                     }
-                }
-                else{ // celula atual morta
-                    if (viz.vivos == 3){
-                        new_grid[j][k] = viz.media;
+                } else { // cell is dead
+                    if (viz.vivos == 3) {
+                        new_grid[i][j] = viz.media;
                         celulas_vivas++;
-                    }
-                    else new_grid[j][k] = 0.0;
+                    } else
+                        new_grid[i][j] = 0.0;
                 }
             }
         }
 
-        MPI_Gather(grid, step, MPI_FLOAT, new_grid, step, MPI_FLOAT, 0, MPI_COMM_WORLD)
-        if(rank == 0){
-            // float **aux = grid;
-            // grid = new_grid;
-            // new_grid = aux;
-            printf("Geracao %d: %d\n", i, celulas_vivas);
-            printSubgrid(grid);
-            system("cls");
+        float **temp = grid;
+        grid = new_grid;
+        new_grid = temp;
+
+        MPI_Barrier(MPI_COMM_WORLD);
+
+        if (rank == 0) {
+            printf("Generation %d: %d\n", iter, celulas_vivas);
         }
     }
 
     gettimeofday(&end_time, NULL);
 
-    printf("-------Execução serial finalizada-------");
+    if (rank == 0) {
+        printf("-------Execução Finalizada-------\n");
 
-    elapsed_time = (end_time.tv_sec - start_time.tv_sec) + 
-                   (end_time.tv_usec - start_time.tv_usec) / 1000000.0;
+        elapsed_time = (end_time.tv_sec - start_time.tv_sec) +
+                       (end_time.tv_usec - start_time.tv_usec) / 1000000.0;
 
-    printf("Tempo total de execução: %lf segundos\n", elapsed_time);
+        printf("Tempo de execução: %lf segundos\n", elapsed_time);
+    }
 
     desalocarMatriz(grid);
     desalocarMatriz(new_grid);
@@ -124,22 +112,28 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
+void comunicaVizinhos(float **grid, int rank, int size) {
+    MPI_Status status;
 
-void alocarMatriz(float ***matriz){
-    *matriz = (float **)malloc(N * sizeof(float *));
-    for (int i = 0; i < N; i++) (*matriz)[i] = (float *)malloc(N * sizeof(float));
-
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < N; j++) {
-            (*matriz)[i][j] = 0.0;
-        }
+    // Enviar borda superior rank - 1
+    if (rank > 0) {
+        MPI_Send(grid[rank * (N / size)], N, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
     }
-}
 
+    // Receber borda superior rank - 1
+    if (rank > 0) {
+        MPI_Recv(grid[(rank - 1) * (N / size) + N / size], N, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
+    }
 
-void desalocarMatriz(float **matriz){
-    for(int i = 0; i < N; i++) free(matriz[i]);
-    free(matriz);
+    // Enviar borda inferior rank + 1
+    if (rank < size - 1) {
+        MPI_Send(grid[(rank + 1) * (N / size) - 1], N, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
+    }
+
+    // Receber borda inferior rank + 1
+    if (rank < size - 1) {
+        MPI_Recv(grid[rank * (N / size) + N / size], N, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
+    }
 }
 
 
@@ -168,15 +162,19 @@ void vizinhos(viz_t *viz, float** grid, int x, int y){
 }
 
 
-void printSubgrid(float **grid) {
-    
-    for (int i = 0; i < 50; i++) {
-        for (int j = 0; j < 50; j++){
-            int simb = (int)(grid[i][j] * 10);
-            if(simb == 0) printf(".  ");
-            else if(simb < 10) printf(ANSI_YELLOW "o  " ANSI_WHITE);
-            else if(simb == 10) printf(ANSI_GREEN "o  " ANSI_WHITE);
+void alocarMatriz(float ***matriz){
+    *matriz = (float **)malloc(N * sizeof(float *));
+    for (int i = 0; i < N; i++) (*matriz)[i] = (float *)malloc(N * sizeof(float));
+
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            (*matriz)[i][j] = 0.0;
         }
-        printf("\n");
     }
+}
+
+
+void desalocarMatriz(float **matriz){
+    for(int i = 0; i < N; i++) free(matriz[i]);
+    free(matriz);
 }
