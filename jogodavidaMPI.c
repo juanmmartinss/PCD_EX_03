@@ -16,7 +16,7 @@ void alocarMatriz(float ***matriz);
 void desalocarMatriz(float **matriz);
 void vizinhos(viz_t *viz, float **grid, int x, int y);
 void printSubgrid(float **grid);
-void comunicaVizinhos(float **grid, int rank, int size);
+void comunicaVizinhos(float **grid, int rank, int size, int local_N);
 
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
@@ -36,16 +36,19 @@ int main(int argc, char **argv) {
     alocarMatriz(&new_grid);
 
     // Inicializar grid
-    for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
-        for (int j = 0; j < N; j++) {
-            int offset = rank * local_N;
-
-            int lin1 = offset + 1, col1 = 1;
-            if (i == lin1 && j >= col1 && j < col1 + 5) grid[i][j] = 1.0;
-
-            int lin2 = offset + 10, col2 = 30;
-            if (i >= lin2 && i < lin2 + 3 && j >= col2 && j < col2 + 3) grid[i][j] = 1.0;
-        }
+    if(rank == 0){
+        int lin = 1, col = 1;
+        grid[lin][col+1] = 1.0;
+        grid[lin+1][col+2] = 1.0;
+        grid[lin+2][col] = 1.0;
+        grid[lin+2][col+1] = 1.0;
+        grid[lin+2][col+2] = 1.0;
+        lin = 10, col = 30;
+        grid[lin][col+1] = 1.0;
+        grid[lin][col+2] = 1.0;
+        grid[lin+1][col] = 1.0;
+        grid[lin+1][col+1] = 1.0;
+        grid[lin+2][col+1] = 1.0;
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -56,7 +59,7 @@ int main(int argc, char **argv) {
         celulas_vivas = 0;
 
         // Comunicar bordas com os vizinhos
-        comunicaVizinhos(grid, rank, size);
+        comunicaVizinhos(grid, rank, size, local_N);
 
         for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
             for (int j = 0; j < N; j++) {
@@ -88,9 +91,7 @@ int main(int argc, char **argv) {
 
         MPI_Barrier(MPI_COMM_WORLD);
 
-        if (rank == 0) {
-            printf("Generation %d: %d\n", iter, celulas_vivas);
-        }
+        if (rank == 0) printf("Generation %d: %d\n", iter, celulas_vivas);
     }
 
     gettimeofday(&end_time, NULL);
@@ -112,29 +113,18 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void comunicaVizinhos(float **grid, int rank, int size) {
+void comunicaVizinhos(float **grid, int rank, int size, int local_N) {
     MPI_Status status;
 
-    // Enviar borda superior rank - 1
-    if (rank > 0) {
-        MPI_Send(grid[rank * (N / size)], N, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD);
-    }
+    // Send top boundary to rank - 1 (circular)
+    MPI_Sendrecv_replace(grid[rank * local_N], N, MPI_FLOAT, (rank - 1 + size) % size, 0,
+                          (rank + 1) % size, 0, MPI_COMM_WORLD, &status);
 
-    // Receber borda superior rank - 1
-    if (rank > 0) {
-        MPI_Recv(grid[(rank - 1) * (N / size) + N / size], N, MPI_FLOAT, rank - 1, 0, MPI_COMM_WORLD, &status);
-    }
-
-    // Enviar borda inferior rank + 1
-    if (rank < size - 1) {
-        MPI_Send(grid[(rank + 1) * (N / size) - 1], N, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD);
-    }
-
-    // Receber borda inferior rank + 1
-    if (rank < size - 1) {
-        MPI_Recv(grid[rank * (N / size) + N / size], N, MPI_FLOAT, rank + 1, 0, MPI_COMM_WORLD, &status);
-    }
+    // Send bottom boundary to rank + 1 (circular)
+    MPI_Sendrecv_replace(grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank + 1) % size, 0,
+                          (rank - 1 + size) % size, 0, MPI_COMM_WORLD, &status);
 }
+
 
 
 void vizinhos(viz_t *viz, float** grid, int x, int y){
