@@ -118,13 +118,17 @@ int main(int argc, char **argv) {
 void comunicaVizinhos(float **grid, int rank, int size, int local_N) {
     MPI_Status status;
 
-    // Send top boundary to rank - 1 (circular)
-    MPI_Sendrecv_replace(grid[rank * local_N], N, MPI_FLOAT, (rank - 1 + size) % size, 0,
-                          (rank + 1) % size, 0, MPI_COMM_WORLD, &status);
+    // Comunicar com vizinho anterior
+    MPI_Sendrecv(
+        grid[rank * local_N], N, MPI_FLOAT, (rank - 1 + size) % size, 0,
+        grid[rank * local_N], N, MPI_FLOAT, (rank + 1) % size, 0, 
+        MPI_COMM_WORLD, &status);
 
-    // Send bottom boundary to rank + 1 (circular)
-    MPI_Sendrecv_replace(grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank + 1) % size, 0,
-                          (rank - 1 + size) % size, 0, MPI_COMM_WORLD, &status);
+    // Comunicar com vizinho posterior
+    MPI_Sendrecv(
+        grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank + 1) % size, 0,
+        grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank - 1 + size) % size, 0, 
+        MPI_COMM_WORLD, &status);
 }
 
 
