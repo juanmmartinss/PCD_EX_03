@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
         celulas_vivas = 0;
 
         // Comunicar bordas com os vizinhos
-        comunicaVizinhos(grid, rank, size);
+        if(size > 1) comunicaVizinhos(grid, rank, size);
 
         for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
             for (int j = 0; j < N; j++) {
@@ -96,15 +96,15 @@ int main(int argc, char **argv) {
         // somar celulas vivas
         int total_celulas_vivas = 0;
         MPI_Reduce(&celulas_vivas, &total_celulas_vivas, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-        if (rank == 0) printf("Geração %d: %d\n", iter, total_celulas_vivas);
+        //if (rank == 0) printf("Geração %d: %d\n", iter, total_celulas_vivas);
     }
 
     gettimeofday(&end_time, NULL);
     if (rank == 0) {
-        printf("-------Execução Finalizada-------\n");
+        printf("-------Execução Finalizada (%d Processos)-------\n", size);
         elapsed_time = (end_time.tv_sec - start_time.tv_sec) +
                        (end_time.tv_usec - start_time.tv_usec) / 1000000.0;
-        printf("Tempo de execução: %lf segundos\n", elapsed_time);
+        printf("Tempo de execução: %.3lfs\n", elapsed_time);
     }
 
     desalocarMatriz(grid);
