@@ -14,9 +14,8 @@ typedef struct viz_t {
 
 void alocarMatriz(float ***matriz);
 void desalocarMatriz(float **matriz);
-void vizinhos(viz_t *viz, float **grid, int x, int y);
-void printSubgrid(float **grid);
-void comunicaVizinhos(float **grid, int rank, int size, int local_N);
+void vizinhosVivos(viz_t *viz, float **grid, int x, int y);
+void comunicaVizinhos(float **grid, int rank, int size);
 
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
@@ -59,23 +58,25 @@ int main(int argc, char **argv) {
         celulas_vivas = 0;
 
         // Comunicar bordas com os vizinhos
-        comunicaVizinhos(grid, rank, size, local_N);
+        comunicaVizinhos(grid, rank, size);
 
         for (int i = rank * local_N; i < (rank + 1) * local_N; i++) {
             for (int j = 0; j < N; j++) {
                 viz_t viz;
                 viz.media = 0.0;
                 viz.vivos = 0;
-                vizinhos(&viz, grid, i, j);
+                vizinhosVivos(&viz, grid, i, j);
 
-                if (grid[i][j] != 0.0) { // cell is alive
+                if (grid[i][j] != 0.0) { 
+                    // célula viva
                     if (viz.vivos < 2 || viz.vivos > 3)
                         new_grid[i][j] = 0.0;
                     else {
                         new_grid[i][j] = 1.0;
                         celulas_vivas++;
                     }
-                } else { // cell is dead
+                } else { 
+                    // célula morta
                     if (viz.vivos == 3) {
                         new_grid[i][j] = viz.media;
                         celulas_vivas++;
@@ -84,26 +85,25 @@ int main(int argc, char **argv) {
                 }
             }
         }
-
+        // trocar grids
         float **temp = grid;
         grid = new_grid;
         new_grid = temp;
 
+        // sincronizar
         MPI_Barrier(MPI_COMM_WORLD);
 
+        // somar celulas vivas
         int total_celulas_vivas = 0;
         MPI_Reduce(&celulas_vivas, &total_celulas_vivas, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
         if (rank == 0) printf("Geração %d: %d\n", iter, total_celulas_vivas);
     }
 
     gettimeofday(&end_time, NULL);
-
     if (rank == 0) {
         printf("-------Execução Finalizada-------\n");
-
         elapsed_time = (end_time.tv_sec - start_time.tv_sec) +
                        (end_time.tv_usec - start_time.tv_usec) / 1000000.0;
-
         printf("Tempo de execução: %lf segundos\n", elapsed_time);
     }
 
@@ -115,25 +115,31 @@ int main(int argc, char **argv) {
     return 0;
 }
 
-void comunicaVizinhos(float **grid, int rank, int size, int local_N) {
+void comunicaVizinhos(float **grid, int rank, int size) {
     MPI_Status status;
+    int local_N = N / size;
 
-    // Comunicar com vizinho anterior
+    int proc_anterior = (rank - 1 + size) % size;
+    int proc_posterior = (rank + 1) % size;
+
+    int send_anterior = (rank * local_N + N) % N;
+    int recv_anterior = (rank * local_N - 1 + N) % N;
+    int send_posterior = ((rank + 1) * local_N - 1) % N;
+    int recv_posterior = ((rank + 1) * local_N) % N;
+
     MPI_Sendrecv(
-        grid[rank * local_N], N, MPI_FLOAT, (rank - 1 + size) % size, 0,
-        grid[rank * local_N], N, MPI_FLOAT, (rank + 1) % size, 0, 
+        grid[send_anterior], N, MPI_FLOAT, proc_anterior, 0,
+        grid[recv_posterior], N, MPI_FLOAT, proc_posterior, 0, 
         MPI_COMM_WORLD, &status);
-
-    // Comunicar com vizinho posterior
     MPI_Sendrecv(
-        grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank + 1) % size, 0,
-        grid[(rank + 1) * local_N - 1], N, MPI_FLOAT, (rank - 1 + size) % size, 0, 
+        grid[send_posterior], N, MPI_FLOAT, proc_posterior, 0,
+        grid[recv_anterior], N, MPI_FLOAT, proc_anterior, 0, 
         MPI_COMM_WORLD, &status);
 }
 
 
 
-void vizinhos(viz_t *viz, float** grid, int x, int y){
+void vizinhosVivos(viz_t *viz, float** grid, int x, int y){
     int aux_i, aux_j;
 
     for(int i = x - 1; i <= x + 1; i++){
@@ -143,9 +149,9 @@ void vizinhos(viz_t *viz, float** grid, int x, int y){
             aux_i = i;
             aux_j = j;
             // simular borda infinita
-            if(i < 0) i = 2047;
+            if(i < 0) i = N - 1;
             else if(i >= N) i = 0;
-            if(j < 0) j = 2047;
+            if(j < 0) j = N - 1;
             else if(j >= N) j = 0;
             
             if(grid[i][j] != 0.0) viz->vivos++;
